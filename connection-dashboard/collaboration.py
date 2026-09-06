@@ -8,7 +8,7 @@ from chunk_store import get_chunk,has_chunk,store_chunk
 from dashboard_protocol import ApiError,now_label,read_message,send_message
 ACTIVE_REQUESTS={"sending","uploading","pending","applying","cancel_pending"}
 TERMINAL_REQUESTS={"completed","rejected","failed","expired","cancelled"}
-MAX_MEMBERS=2
+MAX_MEMBERS=10
 class CollaborationMixin:
     def _init_collaboration(self,peers):
         self.board_lock=threading.Lock()
