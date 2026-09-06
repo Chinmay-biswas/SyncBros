@@ -1,4 +1,29 @@
-# Verified File Sync Prototype
+# SyncBros
+
+## Sync folders and subfolders using the dashboard
+
+The dashboard now syncs nested files and empty directories inside `sync_folder`. For example, creating `sync_folder\docs\reports\notes.txt` also creates `docs\reports` on the receiving laptop. Identical filenames in different subfolders stay separate.
+
+Use the dashboard server on every laptop. See the [dashboard setup guide](connection-dashboard/README.md) for the admin and member commands.
+
+- In **full sync**, new folders, nested file edits, folder renames, and deletions propagate through the admin automatically after the baseline finishes.
+- In **approval mode**, a member uses **Request folder change**. The admin receives one request for the whole directory tree. Approval applies it; rejection leaves the admin tree unchanged.
+- **Send admin folder** and **Sync admin folder to all** include empty and nested folders and remove paths absent from the admin tree.
+- **Restore** restores saved files and directories on the admin. **Restore + send all** also distributes the restored tree.
+
+Install the updated `connection-dashboard` source files on **every participating laptop**, including the new `tree_transfer.py`, and restart each server. Keep each laptop's own `dashboard_state.json`, `node_store`, and `sync_folder`; do not replace them with another laptop's saved data. Older versions do not understand directory transfers. After restarting, start a new full-sync session or use **Sync admin folder to all** to establish the shared baseline. Starting full sync replaces member trees with the admin tree, so submit member-only work for approval first if you want to keep it.
+
+Folder updates still transfer only missing chunks. A rename can reuse all cached file chunks; directory entries carry metadata without file bytes. Snapshots support at most 2,000 combined file and directory entries. Symbolic links, junctions, and temporary `.part` or `.syncing-` paths are excluded.
+
+Run the directory regression checks from the project folder:
+
+```powershell
+python connection-dashboard\test_folders.py
+```
+
+## Legacy command-line tools
+
+The commands below describe the original single-file CLI. Use the dashboard above for recursive folder syncing, approvals, and directory history.
 
 Files are divided into 1 MiB SHA-256-addressed chunks. Only chunks absent from the destination are transferred; every chunk and the reconstructed file are verified.
 
