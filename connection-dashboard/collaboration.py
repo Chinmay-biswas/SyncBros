@@ -26,4 +26,29 @@ class CollaborationMinxin:
         self.baseline_transfers=set()
         self.workers=set()
         self.device_id=self.state.setdefault("device_id", uuid.uuid4().hex)
-        
+        self.state.setdefault("outgoing_requests",[])
+        self.state.setdefault("request_tombstones",[])
+        self.state.setdefault("roster",[])
+        self.state.setdefault("admin_endpoints",None)
+        self.state.setdefault("member_ids",[])
+        self.state.setdefault("session_id","")
+        self.state.setdefault("advertised_host","")
+
+        unique=[]
+
+
+        for user in self.state["users"]:
+            if any((u["address"],u["port"])== (user["address"],user["port"])
+                   or u["name"].casefold()==user["name"].casefold() for u in unique):
+                continue
+            user.setdefault("role","member" if self.role=="admin" else "admin")
+            unique.append(user)
+        self.state["users"]=unique
+        if self.role=="admin":
+            if not self.state.get("directory_initialized"):
+                for name,host,port in perrs:
+                    if not any(u["name"].casefold()==name.casefold()
+                               or (u["address"],u["port"])==(host,port) for u in unique):
+                        self._upsert_peer(name,host,port, state="available", save=False)
+                    self.state["directory_initialilzed"]=True
+
