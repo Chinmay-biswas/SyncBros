@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SyncCircle · Local sync dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="colors.css">
+  <link rel="stylesheet" href="offline.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">↗</span><span>SyncCircle</span></div>
+      <p class="eyebrow">LOCAL WORKSPACE</p>
+      <nav aria-label="Main navigation">
+        <button class="nav-link active" data-view="connections"><span>◎</span> Connections <b id="connectionBadge">0</b></button>
+        <button class="nav-link" data-view="requests"><span>◇</span> Change requests <b id="requestBadge">0</b></button>
+        <button class="nav-link" data-view="history"><span>◷</span> History</button>
+      </nav>
+      <div class="sidebar-footer"><span id="syncDot" class="online-dot"></span><span id="syncStatus">Starting local sync…</span></div>
+    </aside>
+    <main class="main-content">
+      <header class="topbar">
+        <div><p class="eyebrow">OFFLINE LAN DASHBOARD</p><h1 id="pageTitle">Connections</h1></div>
+        <div class="profile"><div class="avatar avatar-indigo" id="profileInitials">TD</div><div><strong id="deviceName">This device</strong><small id="roleLabel">Loading role…</small></div></div>
+      </header>
+      <section id="connectionsView" class="view">
+        <div class="hero-card">
+          <div>
+            <span class="pill pill-blue">● Local chunked sync service</span>
+            <h2>Work together, safely.</h2>
+            <p>Choose a full shared folder, or review one complete member folder state before it changes the admin workspace.</p>
+          </div>
+          <div class="hero-art"><span>✦</span><span>↗</span><span>◌</span></div>
+        </div>
+        <div id="modePanel" aria-live="polite"></div>
+        <p id="boardStatus" class="board-status" role="status">Loading shared team…</p>
+        <div class="section-heading">
+          <div><p class="eyebrow">PEOPLE</p><h2>Shared team</h2></div>
+          <div class="heading-actions"><div class="search-wrap"><span>⌕</span><input id="userSearch" type="search" placeholder="Search users..."></div><button class="primary-button" id="addPeerButton">＋ Add member</button><button class="outline-button hidden" id="adminConnectionButton">Admin connection</button></div>
+        </div>
+        <p id="connectionHint" class="muted">Add a LAN user to request a connection or sync a folder state.</p>
+        <div id="userGrid" class="user-grid"></div>
+      </section>
+      <section id="requestsView" class="view hidden">
+        <div class="section-heading">
+          <div><p class="eyebrow">ADMIN QUEUE</p><h2>Requests for approval</h2><p class="muted" id="requestDescription">Review incoming changes before they reach the shared folder.</p></div>
+          <span class="pill pill-orange" id="queueStatus">0 awaiting review</span>
+        </div>
+        <div id="requestList" class="request-list"></div>
+      </section>
+      <section id="historyView" class="view hidden">
+        <div class="section-heading">
+          <div><p class="eyebrow">ADMIN STATE HISTORY</p><h2>Saved folder states</h2><p class="muted">States retain changed manifests and chunk references, so the admin can restore a prior sync_folder.</p></div>
+        </div>
+        <div id="stateHistory" class="state-list"></div>
+        <div class="section-heading history-heading">
+          <div><p class="eyebrow">AUDIT TRAIL</p><h2>Change history</h2><p class="muted">Stored locally in this dashboard folder. The newest event appears first.</p></div>
+          <select id="historyFilter" aria-label="Filter history"><option value="all">All activity</option><option value="change">Changes</option><option value="connection">Connections</option><option value="system">System</option></select>
+        </div>
+        <div class="history-card"><div class="history-head"><span>Activity</span><span>When</span></div><div id="historyList"></div></div>
+      </section>
+    </main>
+  </div>
+  <div id="toast" class="toast" role="status"></div>
+  <div id="peerModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <button class="close-modal" data-close="peerModal" aria-label="Close">×</button>
+      <p class="eyebrow" id="peerModalEyebrow">ADD LAN USER</p>
+      <h2 id="peerModalTitle">Add a user</h2>
+      <p class="muted" id="peerModalDescription">Use the other device’s private LAN IP and its dashboard sync port. No internet is used.</p>
+      <label for="peerName">Name</label><input id="peerName" placeholder="e.g. Member B">
+      <label for="peerHost">LAN IP address</label><input id="peerHost" placeholder="e.g. 192.168.1.51">
+      <label for="peerPort">Sync port</label><input id="peerPort" type="number" min="1" max="65535" value="5000">
+      <button class="primary-button" id="submitPeer">Add available user <span>＋</span></button>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

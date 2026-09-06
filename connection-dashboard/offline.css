@@ -1,0 +1,244 @@
+body{
+  font-family:"Segoe UI",Arial,sans-serif;
+}
+.brand,.topbar h1,.hero-card h2,.section-heading h2,.modal-card h2{
+  font-family:"Trebuchet MS","Segoe UI",Arial,sans-serif;
+}
+.heading-actions{
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+.heading-actions .primary-button{
+  white-space:nowrap;
+}
+.modal-card input[type="file"]{
+  padding:9px;
+  background:#fafbff;
+}
+.empty-card{
+  grid-column:1 / -1;
+  padding:28px;
+  background:#fff;
+  border:1px dashed #cfd6e5;
+  border-radius:13px;
+  color:#758096;
+  text-align:center;
+}
+.empty-card h3{
+  color:#243047;
+  font-size:15px;
+  margin:0 0 7px;
+}
+.empty-card p{
+  margin:0;
+  font-size:12px;
+}
+.idle-dot{
+  background:#c4cbd7;
+  box-shadow:0 0 0 4px #f0f2f6;
+}
+.offline-dot{
+  background:#e76b6b;
+  box-shadow:0 0 0 4px #feecec;
+}
+.request-kind{
+  display:inline-block;
+  margin-right:5px;
+  font-size:10px;
+  font-weight:700;
+  color:#5d5ce2;
+  text-transform:uppercase;
+  letter-spacing:.5px;
+}
+.edit-peer-button{
+  width:100%;
+  margin-top:10px;
+  padding:3px 0 0;
+  background:transparent;
+  color:#6674be;
+  font-size:11px;
+  font-weight:700;
+  text-align:center;
+}
+.edit-peer-button:hover{
+  color:#4545b8;
+  text-decoration:underline;
+}
+.toast-error{
+  background:#a33c47;
+}
+button:disabled{
+  cursor:not-allowed;
+  opacity:.58;
+}
+.mode-panel{
+  margin-top:18px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:24px;
+  padding:22px 24px;
+  border:1px solid #dfe3f0;
+  border-radius:14px;
+  background:#fff;
+  box-shadow:var(--shadow);
+}
+.mode-panel h2{
+  margin:0;
+  font:600 18px "Trebuchet MS","Segoe UI",Arial,sans-serif;
+  color:#243047;
+}
+.mode-panel p:not(.eyebrow){
+  margin:7px 0 0;
+  color:#68758b;
+  font-size:12px;
+  line-height:1.5;
+  max-width:620px;
+}
+.mode-panel .eyebrow{
+  margin-bottom:7px;
+}
+.mode-full{
+  border-color:#cae9d6;
+  background:linear-gradient(100deg,#f8fffa,#fff);
+}
+.mode-full h2{
+  color:#238353;
+}
+.mode-approval{
+  border-color:#dddaf9;
+  background:linear-gradient(100deg,#fbfbff,#fff);
+}
+.mode-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  justify-content:flex-end;
+  min-width:max-content;
+}
+.state-list{
+  display:grid;
+  gap:10px;
+}
+.state-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:18px;
+  padding:17px 20px;
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:12px;
+  box-shadow:var(--shadow);
+}
+.state-row strong{
+  display:block;
+  font-size:13px;
+  color:#27334a;
+}
+.state-row small{
+  display:block;
+  margin-top:5px;
+  color:var(--muted);
+  font-size:11px;
+}
+.state-actions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+.state-actions .outline-button,.state-actions .primary-button{
+  flex:initial;
+  white-space:nowrap;
+}
+.history-heading{
+  margin-top:42px;
+}
+.board-status{
+  margin:14px 0 0;
+  padding:12px 16px;
+  border-radius:9px;
+  background:#edf7f1;
+  color:#397454;
+  font-size:12px;
+  line-height:1.5;
+  overflow-wrap:anywhere;
+}
+.board-error{
+  background:#fff0e8;
+  color:#a4532f;
+}
+.member-management{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin-top:14px;
+}
+.member-management .edit-peer-button{
+  width:auto;
+  margin:0;
+  padding:0;
+  text-align:left;
+}
+.delete-peer-button{
+  background:transparent;
+  color:#b65360;
+  font-size:11px;
+  padding:0;
+}
+.self-label{
+  font-size:10px;
+  color:#79779c;
+  font-weight:400;
+}
+.request-controls{
+  display:grid;
+  gap:10px;
+  justify-items:end;
+}
+.request-failed,.request-rejected{
+  color:#b65360;
+}
+.request-pending{
+  color:#ac7127;
+}
+.request-completed{
+  color:#238353;
+}
+.request-actions{
+  flex-wrap:wrap;
+}
+.user-card h3,.user-card small,.request-body{
+  overflow-wrap:anywhere;
+}
+.user-card .user-top > div:last-child{
+  min-width:0;
+}
+.user-card .avatar{
+  flex-shrink:0;
+}
+@media (max-width: 760px){
+  .mode-panel,.state-row{
+    align-items:flex-start;
+    flex-direction:column;
+  }
+  .mode-actions,.state-actions{
+    width:100%;
+    justify-content:flex-start;
+  }
+}
+@media (max-width: 540px){
+  .heading-actions{
+    width:100%;
+    flex-direction:column;
+    align-items:stretch;
+  }
+  .heading-actions .primary-button{
+    width:100%;
+  }
+  .mode-actions,.mode-actions button,.state-actions,.state-actions button{
+    width:100%;
+  }
+}
