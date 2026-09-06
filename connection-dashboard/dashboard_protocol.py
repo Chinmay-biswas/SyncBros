@@ -8,8 +8,8 @@ class ApiError(ValueError):
 def now_label():
     return datetime.now().astimezone().strftime("%d %b, %I:%M %p")
 
-def send_message(connection, message):
-    connection.sendall(json.dumps(message, seprators=(",", ":")).encode("utf-8"))
+def send_message(connection,message):
+    connection.sendall(json.dumps(message,separators=(",",":")).encode("utf-8")+b"\n")
 
 def read_message(reader):
     line=reader.readline(24*1024*1024+1)
