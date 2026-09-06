@@ -2,6 +2,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import os
 import shutil
 import socket
 import sys
@@ -24,12 +25,14 @@ from sender import TransferRejected
 from sync import reconstruct_from_manifest
 from dashboard_protocol import ApiError,now_label,read_message,send_message
 from collaboration import CollaborationMixin,MAX_MEMBERS
+from tree_transfer import TreeTransferMixin
 MAX_HTTP_BODY=24*1024*1024
 MAX_CHUNK_BYTES=4*1024*1024
 MAX_SNAPSHOT_FILES=2_000
 APPROVAL_TIMEOUT_SECONDS=15*60
 MODE_APPROVAL="approval"
 MODE_FULL_SYNC="full_sync"
+DIR_HASH="directory"
 class PendingDecision:
     def __init__(self)->None:
         self.event=threading.Event()
@@ -41,12 +44,18 @@ def is_digest(value:Any)->bool:
 def safe_filename(value:Any)->str:
     if not isinstance(value,str)or not value.strip():
         raise ApiError("A file name is required.")
-    if "/" in value or "\\" in value:
-        raise ApiError("Only a single file name is allowed.")
-    candidate=Path(value)
-    if candidate.name!=value or value in {".",".."}:
-        raise ApiError("Only a single file name is allowed.")
-    return candidate.name
+    parts=value.split("/")
+    reserved={"CON","PRN","AUX","NUL","CONIN$","CONOUT$"}|{f"{p}{i}" for p in ("COM","LPT")for i in "123456789¹²³"}
+    for part in parts:
+        if (not part or part in {".",".."}or part.endswith((" ","."))
+            or any(ord(c)<32 or c in '\\:<>"|?*' for c in part)
+            or part.split(".")[0].upper()in reserved
+            or part.endswith(".part")or ".syncing-" in part):
+            raise ApiError("Use a relative path inside sync_folder with valid file and folder names.")
+    return "/".join(parts)
+
+def dir_manifest(name):
+    return {"filename":name,"kind":"directory","file_hash":DIR_HASH,"size":0,"chunks":[]}
 
 def parse_peer(value:str,default_port:int)->tuple[str,str,int]:
     if "=" not in value:
@@ -66,7 +75,7 @@ def parse_peer(value:str,default_port:int)->tuple[str,str,int]:
 def request_event_type(kind:str)->str:
     return "connection" if kind=="connection" else "change"
 
-class DashboardSyncService(CollaborationMixin):
+class DashboardSyncService(CollaborationMixin,TreeTransferMixin):
     def __init__(
         self,
         *,
@@ -104,6 +113,7 @@ class DashboardSyncService(CollaborationMixin):
         self.remote_hashes:dict[str,str]={}
         self.remote_deletions:set[str]=set()
         self.full_sync_initializing=False
+        self.tree_queues={}
         self.state=self._load_state()
         self.state["role"]=self.role
         self.state["device_name"]=self.device_name
@@ -306,6 +316,7 @@ class DashboardSyncService(CollaborationMixin):
                         "time":entry.get("time"),
                         "label":entry.get("label"),
                         "file_count":entry.get("file_count",0),
+                        "folder_count":entry.get("folder_count",0),
                         "change_count":entry.get("change_count",0),
                     }
                 )
@@ -324,21 +335,36 @@ class DashboardSyncService(CollaborationMixin):
 
     def _safe_destination(self,filename:Any)->Path:
         name=safe_filename(filename)
-        dst=(self.sync_dir/name).resolve()
-        if dst.parent!=self.sync_dir:
-            raise ApiError("Nested destination paths are not supported.")
+        dst=self.sync_dir
+        for part in name.split("/"):
+            dst=dst/part
+            if dst.is_symlink()or (dst.exists()and getattr(dst.lstat(),"st_file_attributes",0)&0x400):
+                raise ApiError("Sync paths must not contain symbolic links or junctions.")
+        dst=dst.resolve()
+        if not dst.is_relative_to(self.sync_dir)or dst==self.sync_dir:
+            raise ApiError("The destination must stay inside sync_folder.")
         return dst
 
     def _scan_sync_files(self)->dict[str,tuple[Path,str]]:
         self.sync_dir.mkdir(parents=True,exist_ok=True)
         files:dict[str,tuple[Path,str]]={}
-        for path in self.sync_dir.iterdir():
-            if not path.is_file()or path.name.endswith(".part")or ".syncing-" in path.name:
-                continue
-            try:
-                files[path.name]=(path,hash_file(path))
-            except OSError:
-                continue
+        def fail(err):
+            raise err
+
+        for root,dirs,names in os.walk(self.sync_dir,followlinks=False,onerror=fail):
+            for name in list(dirs)+names:
+                path=Path(root)/name
+                rel=path.relative_to(self.sync_dir).as_posix()
+                try:
+                    self._safe_destination(rel)
+                except ApiError:
+                    if name in dirs:
+                        dirs.remove(name)
+                    continue
+                if path.is_dir():
+                    files[rel]=(path,DIR_HASH)
+                elif path.is_file():
+                    files[rel]=(path,hash_file(path))
         return files
 
     def _capture_folder_manifests(self)->dict[str,dict[str,Any]]:
@@ -346,21 +372,31 @@ class DashboardSyncService(CollaborationMixin):
         with self.file_lock:
             files=self._scan_sync_files()
             for name,(path,expected_hash)in files.items():
+                if expected_hash==DIR_HASH:
+                    manifests[name]=dir_manifest(name)
+                    continue
                 try:
                     meta=create_manifest(path,self.store_dir)
                     if meta["file_hash"]!=expected_hash:
                         meta=create_manifest(path,self.store_dir)
                     if not path.is_file()or hash_file(path)!=meta["file_hash"]:
-                        continue
+                        raise ApiError("A file changed while capturing the folder. Try again after saving it.")
+                    meta["filename"]=name
                     manifests[name]=meta
                 except OSError:
-                    continue
-        return manifests
+                    raise ApiError("A file could not be read while capturing the folder. Close it and try again.")
+        return self._validate_snapshot_manifests(list(manifests.values()))
 
     def _validate_manifest(self,candidate:Any)->dict[str,Any]:
         if not isinstance(candidate,dict):
             raise ApiError("Invalid file manifest.")
         filename=safe_filename(candidate.get("filename"))
+        if candidate.get("kind")=="directory":
+            if candidate.get("chunks")not in (None,[])or candidate.get("size",0)!=0:
+                raise ApiError("A directory entry cannot contain file data.")
+            return dir_manifest(filename)
+        if candidate.get("kind","file")!="file":
+            raise ApiError("Invalid entry kind.")
         if not is_digest(candidate.get("file_hash")):
             raise ApiError("Manifest file hash is invalid.")
         size=candidate.get("size")
@@ -398,14 +434,30 @@ class DashboardSyncService(CollaborationMixin):
 
     def _validate_snapshot_manifests(self,candidates:Any)->dict[str,dict[str,Any]]:
         if not isinstance(candidates,list)or len(candidates)>MAX_SNAPSHOT_FILES:
-            raise ApiError(f"A folder snapshot may contain at most {MAX_SNAPSHOT_FILES:,} flat files.")
+            raise ApiError(f"A folder snapshot may contain at most {MAX_SNAPSHOT_FILES:,} files and folders.")
         manifests:dict[str,dict[str,Any]]={}
+        seen=set()
         for candidate in candidates:
             meta=self._validate_manifest(candidate)
             name=meta["filename"]
-            if name in manifests:
+            if name.casefold()in seen:
                 raise ApiError("A folder snapshot cannot contain duplicate file names.")
+            seen.add(name.casefold())
             manifests[name]=meta
+        for name in list(manifests):
+            parts=name.split("/")
+            for i in range(1,len(parts)):
+                parent="/".join(parts[:i])
+                if parent in manifests:
+                    if manifests[parent].get("kind")!="directory":
+                        raise ApiError("A file cannot also be the parent of another entry.")
+                elif parent.casefold()in seen:
+                    raise ApiError("Folder path casing must be consistent.")
+                else:
+                    manifests[parent]=dir_manifest(parent)
+                    seen.add(parent.casefold())
+        if len(manifests)>MAX_SNAPSHOT_FILES:
+            raise ApiError("The folder contains too many entries.")
         return manifests
 
     def _staging_root(self)->Path:
@@ -422,13 +474,16 @@ class DashboardSyncService(CollaborationMixin):
 
     def _cleanup_staging_dir(self,directory:Path)->None:
         root=self._staging_root()
-        if directory.parent==root and directory.name.startswith(("incoming-","revert-","snapshot-")):
+        if directory.parent==root and directory.name.startswith(("incoming-","revert-","snapshot-","approved-","delta-")):
             shutil.rmtree(directory,ignore_errors=True)
 
     def _stage_snapshot(self,manifests:dict[str,dict[str,Any]],*,prefix:str)->Path:
         staging=self._new_staging_dir(prefix)
         try:
-            for name,meta in manifests.items():
+            for name,meta in sorted(manifests.items(),key=lambda item:(item[0].count("/"),item[0])):
+                if meta.get("kind")=="directory":
+                    (staging/name).mkdir(parents=True,exist_ok=True)
+                    continue
                 if any(not has_chunk(chunk["hash"],self.store_dir)for chunk in meta["chunks"]):
                     raise ApiError(f"Chunk data for {name} is not available locally.")
                 reconstruct_from_manifest(meta,self.store_dir,staging/name)
@@ -439,17 +494,31 @@ class DashboardSyncService(CollaborationMixin):
 
     def _apply_staged_snapshot(self,staging:Path,manifests:dict[str,dict[str,Any]],*,remote:bool)->tuple[int,int]:
         with self.file_lock:
+            for name in manifests:
+                self._safe_destination(name)
             before=self._scan_sync_files()
             target_names=set(manifests)
-            for name in set(before)-target_names:
-                self._safe_destination(name).unlink(missing_ok=True)
+            removed={name for name in before if name not in manifests
+                     or (before[name][1]==DIR_HASH)!=(manifests[name].get("kind")=="directory")}
+            for name in sorted(removed,key=lambda n:(n.count("/"),n),reverse=True):
+                dst=self._safe_destination(name)
+                if dst.is_dir():
+                    dst.rmdir()
+                else:
+                    dst.unlink(missing_ok=True)
                 if remote:
                     self.remote_deletions.add(name)
-            for name,meta in manifests.items():
-                src=(staging/name).resolve()
-                if src.parent!=staging or not src.is_file():
-                    raise ApiError("Snapshot staging is invalid.")
+            for name,meta in sorted(manifests.items(),key=lambda item:(item[0].count("/"),item[0])):
                 dst=self._safe_destination(name)
+                if meta.get("kind")=="directory":
+                    dst.mkdir(parents=True,exist_ok=True)
+                    continue
+                if before.get(name,(None,None))[1]==meta["file_hash"]:
+                    continue
+                src=(staging/name).resolve()
+                if not src.is_relative_to(staging)or not src.is_file():
+                    raise ApiError("Snapshot staging is invalid.")
+                dst.parent.mkdir(parents=True,exist_ok=True)
                 tmp=dst.with_name(f"{dst.name}.syncing-{uuid.uuid4().hex}")
                 try:
                     shutil.copyfile(src,tmp)
@@ -469,6 +538,7 @@ class DashboardSyncService(CollaborationMixin):
             return changed,len(set(before)-target_names)
 
     def _apply_snapshot(self,manifests:dict[str,dict[str,Any]],*,remote:bool,prefix:str)->tuple[int,int]:
+        manifests=self._validate_snapshot_manifests(list(manifests.values()))
         staging=self._stage_snapshot(manifests,prefix=prefix)
         try:
             return self._apply_staged_snapshot(staging,manifests,remote=remote)
@@ -524,7 +594,8 @@ class DashboardSyncService(CollaborationMixin):
                 "parent_id":states[-1].get("id")if states else None,
                 "time":now_label(),
                 "label":label,
-                "file_count":len(curr),
+                "file_count":sum(m.get("kind")!="directory" for m in curr.values()),
+                "folder_count":sum(m.get("kind")=="directory" for m in curr.values()),
                 "change_count":len(changes),
                 "changes":changes if states else copy.deepcopy(curr),
             }
@@ -546,7 +617,7 @@ class DashboardSyncService(CollaborationMixin):
             self._history_locked(
                 "change",
                 "Admin folder restored",
-                f"Restored {len(desired)} file(s); {changed} updated and {removed} removed.",
+                f"Restored {len(desired)} file/folder entries; {changed} updated and {removed} removed.",
             )
             self._save_locked()
         if send_to_all:
@@ -624,6 +695,9 @@ class DashboardSyncService(CollaborationMixin):
                     send_message(connection,self._board_reply(req,address,connection.getsockname()[0]))
                 elif request_type=="submit_request":
                     self._receive_submission(connection,reader,address,req)
+                elif request_type=="tree_update":
+                    self._validate_transfer_sender(req,address)
+                    self._receive_tree_update(connection,reader,address,req)
                 elif request_type=="delete_request":
                     self._require_admin()
                     self._member_for_packet(req,address)
@@ -960,32 +1034,15 @@ class DashboardSyncService(CollaborationMixin):
 
     def _push_admin_snapshot_worker(self,user:dict[str,Any],reason:str,announce_mode:bool)->None:
         try:
-            snap=self._capture_folder_manifests()
-            if announce_mode:
-                reply=self._send_control(
-                    user,
-                    {
-                        "type":"mode_start",
-                        "session_id":self.state["session_id"],
-                        "message":"Full sync started by the administrator.",
-                    },
-                )
-                if reply.get("type")!="mode_ack":
-                    raise ValueError(reply.get("error","Peer did not acknowledge full sync."))
-            transferred=0
-            for name in sorted(snap):
-                transferred+=self._send_manifest_to_user(user,snap[name])
-            reply=self._send_control(
-                user,
-                {
-                    "type":"snapshot_finalize",
-                    "files":[{"filename":name,"file_hash":snap[name]["file_hash"]}for name in sorted(snap)],
-                    "label":reason,
-                    "session_id":self.state["session_id"],
-                },
-            )
-            if reply.get("type")!="snapshot_applied":
-                raise ValueError(reply.get("error","Peer could not apply the complete folder snapshot."))
+            with self.file_lock:
+                snap=self._capture_folder_manifests()
+                task=self._queue_tree_update(user,snap,[],replace=True,announce=announce_mode,label=reason)
+            while not task["done"].wait(0.2):
+                if self.stop_event.is_set():
+                    return
+            if task["error"]:
+                raise task["error"]
+            transferred=task["chunks"]
             with self.lock:
                 self.state.setdefault("sent_hashes",{})[str(user["id"])]={
                     name:meta["file_hash"]for name,meta in snap.items()
@@ -993,7 +1050,7 @@ class DashboardSyncService(CollaborationMixin):
                 self._history_locked(
                     "change",
                     f"Sent admin folder to {user['name']}",
-                    f"{len(snap)} file(s), {transferred} changed chunk(s); {reason}.",
+                    f"{len(snap)} file/folder entries, {transferred} changed chunk(s); {reason}.",
                 )
                 self._save_locked()
         except Exception as err:
@@ -1137,36 +1194,28 @@ class DashboardSyncService(CollaborationMixin):
 
     def _watch_sync_folder(self)->None:
         while not self.stop_event.wait(self.sync_interval):
-            with self.file_lock:
-                curr=self._scan_sync_files()
-                prev=self.known_files
-                self.known_files=curr
-            if self._mode()!=MODE_FULL_SYNC or self.full_sync_initializing:
-                continue
-            changed=[
-                (name,path,digest)
-                for name,(path,digest)in curr.items()
-                if prev.get(name,(None,None))[1]!=digest
-            ]
-            removed=sorted(set(prev)-set(curr))
-            for name,path,digest in changed:
+            try:
                 with self.file_lock:
-                    if self.remote_hashes.get(name)==digest:
-                        self.remote_hashes.pop(name,None)
+                    curr=self._scan_sync_files()
+                    prev=self.known_files
+                    if self._mode()!=MODE_FULL_SYNC or self.full_sync_initializing:
+                        self.known_files=curr
                         continue
-                if self.role=="admin":
-                    self._record_admin_state(f"Admin full-sync update: {name}")
-                for target in self._full_sync_targets():
-                    self._queue_file_to_user(target,path,source="full-sync watcher")
-            for name in removed:
-                with self.file_lock:
-                    if name in self.remote_deletions:
-                        self.remote_deletions.discard(name)
+                    changed={name for name,(_,digest)in curr.items()if prev.get(name,(None,None))[1]!=digest}
+                    removed=sorted(set(prev)-set(curr))
+                    if not changed and not removed:
                         continue
-                if self.role=="admin":
-                    self._record_admin_state(f"Admin full-sync deletion: {name}")
-                for target in self._full_sync_targets():
-                    self._queue_delete_to_user(target,name,source="full-sync watcher")
+                    snap=self._capture_folder_manifests()
+                    files={name:snap[name]for name in changed if name in snap}
+                    self.known_files={name:(self.sync_dir/name,m["file_hash"])for name,m in snap.items()}
+                    if self.role=="admin":
+                        self._record_admin_state("Admin full-sync folder update",snapshot=snap)
+                    for target in self._full_sync_targets():
+                        self._queue_tree_update(target,files,removed)
+            except (OSError,ApiError)as err:
+                with self.lock:
+                    self._history_locked("change","Could not scan sync folder",str(err))
+                    self._save_locked()
 
     def request_connection(self,user_id:Any)->None:
         self.submit_member_request("connection")

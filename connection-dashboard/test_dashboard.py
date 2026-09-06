@@ -16,7 +16,10 @@ from server import DashboardSyncService,make_http_server
 def wait_for(predicate,timeout:float=12.0):
     deadline=time.monotonic()+timeout
     while time.monotonic()<deadline:
-        value=predicate()
+        try:
+            value=predicate()
+        except FileNotFoundError:
+            value=False
         if value:
             return value
         time.sleep(0.03)

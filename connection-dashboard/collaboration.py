@@ -8,7 +8,7 @@ from chunk_store import get_chunk,has_chunk,store_chunk
 from dashboard_protocol import ApiError,now_label,read_message,send_message
 ACTIVE_REQUESTS={"sending","uploading","pending","applying","cancel_pending"}
 TERMINAL_REQUESTS={"completed","rejected","failed","expired","cancelled"}
-MAX_MEMBERS=10
+MAX_MEMBERS=2
 class CollaborationMixin:
     def _init_collaboration(self,peers):
         self.board_lock=threading.Lock()
@@ -405,7 +405,8 @@ class CollaborationMixin:
                 "title":f"{labels[kind]} from {name}","user":name,"peer_host":address[0],"peer_port":packet["peer_port"],
                 "status":"uploading" if kind=="folder_change" else "pending","submitted_at":now_label(),
                 "detail":"Receiving changed chunks…" if kind=="folder_change" else "Awaiting administrator approval.",
-                "snapshot":snap,"file_count":len(snap)}
+                "snapshot":snap,"file_count":sum(m.get("kind")!="directory" for m in snap.values()),
+                "folder_count":sum(m.get("kind")=="directory" for m in snap.values())}
             if old:
                 self.state["requests"].remove(old)
             self.state["requests"].insert(0,rec)
@@ -434,7 +435,7 @@ class CollaborationMixin:
                 with self.lock:
                     if req_id in self.state["request_tombstones"]:
                         raise ApiError("Request was cancelled during upload.")
-                    rec.update(status="pending",detail=f"One complete folder state: {len(snap)} file(s). Awaiting administrator approval.")
+                    rec.update(status="pending",detail=f"One complete folder state: {rec['file_count']} file(s), {rec['folder_count']} folder(s). Awaiting administrator approval.")
                     self._save_locked()
             send_message(connection,{"type":"request_received","request":self._public_request(rec)})
         except Exception as err:

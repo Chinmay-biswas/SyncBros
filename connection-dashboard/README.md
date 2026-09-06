@@ -1,4 +1,4 @@
-# SyncCircle local dashboard
+# SyncBros local dashboard
 
 This folder is the separate local web dashboard for the chunked LAN file-sync project one level above it. It has no package install, cloud service, external API, web font, or internet requirement.
 Run the dashboard server on every device that participates in the two dashboard modes. It uses the parent project's SHA-256 manifests, chunk store, and verified reconstruction functions. The browser stays on its own laptop at http://127.0.0.1:8080; only the configured private-LAN TCP listener talks to the other laptops.
@@ -38,10 +38,10 @@ Approval mode is the default while full sync is off.
 
 1. A member edits files locally in its sync_folder.
 2. The member clicks **Request folder change** for the connected administrator.
-3. The dashboard sends one request describing the member's entire current flat folder state, not one request per file.
+3. The dashboard sends one request describing the member's entire directory tree, including nested files and empty folders, not one request per file.
 4. The admin sees one queue item for that member and chooses **Approve** or **Reject**.
 
-On approval, chunks are received into a temporary local staging folder, SHA-256 verified, and then the admin sync_folder becomes exactly equal to the requested member folder. That includes removing admin files that are absent from the approved member state.
+The member uploads missing chunks into the admin chunk cache before the request is ready for approval. On approval, files are reconstructed in a temporary staging folder, SHA-256 verified, and then the admin sync_folder becomes equal to the requested member tree. Files and folders absent from that approved state are removed. No live admin files are changed during upload or on rejection.
 
 On rejection, the admin sync_folder is not touched. The member still has its local edits and can revise them or send a later request. The decision produces one outcome notification for that folder request.
 
@@ -73,7 +73,9 @@ Only the admin has **Saved folder states** in the History page.
 
 ## Scope and LAN safety
 
-- The current project intentionally supports a flat sync_folder. Nested folders are rejected.
+- The dashboard supports nested files, empty folders, renames, and directory deletion. Use relative paths within sync_folder; symbolic links and junctions are excluded.
+- Folder transfers use ordered batches per peer and request only missing file chunks. A snapshot can contain up to 2,000 combined file/folder entries.
+- Update the dashboard source on every laptop, including tree_transfer.py, and restart all servers before using directory sync. Keep each laptop's existing state file and chunk store. Then start a fresh full-sync session or send the admin folder to all.
 - Full folder-state requests and full sync require the dashboard service on the participating laptops. The original sender.py still works as a compatible one-file approval sender.
 - This is a trusted-LAN prototype, not encrypted or authenticated production file sharing. Use it only with devices and private addresses you trust.
 - If a laptop cannot connect, first test the actual listener port from the other laptop:
@@ -87,5 +89,8 @@ Only the admin has **Saved folder states** in the History page.
 From the project root:
 
     python connection-dashboard\test_dashboard.py
+    python connection-dashboard\test_collaboration.py
+    python connection-dashboard\test_dashboard_protocol.py
+    python connection-dashboard\test_folders.py
     python validate.py
 The dashboard test starts an admin and two members on loopback addresses. It verifies one whole-folder approval/rejection, direct admin folder sending, member-requested and admin-started full sync, automatic relays, deletion propagation, history restore, HTTP controls, and sender.py compatibility.
