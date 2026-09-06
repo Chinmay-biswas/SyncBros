@@ -21,7 +21,7 @@ def send_file(host,port,file,store):
     manifest=create_manifest(file,store)
     with socket.create_connection((host,port),timeout=15) as connection:
         connection.settimeout(None)
-        reader=connection.amkefile("rb")
+        reader=connection.makefile("rb")
         send_message(connection,{"type":"manifest","manifest":manifest})
         reply=read_message(reader)
 

@@ -4,7 +4,7 @@ from chunk_store import get_chunk,reconstruct_file,has_chunk,store_chunk
 from manifest import create_manifest,hash_file,save_manifest
 
 def find_missing_chunks(manifest,target):
-    return [chunk["hash"] for chunk in manifest in  manifest["chunks"] if not has_chunk(chunk["hash"],target)]
+    return [chunk["hash"]for chunk in manifest["chunks"]if not has_chunk(chunk["hash"],target)]
 
 def transfer_chunk(chunk_hash,source,target):
     data=get_chunk(chunk_hash,source)
