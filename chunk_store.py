@@ -35,3 +35,6 @@ def reconstruct_file(chunk_hashes,store_dir,output_path):
         for chunk_hash in chunk_hashes:
             destination.write(get_chunk(chunk_hash,store_dir))
     temp.replace(output)
+
+
+    
